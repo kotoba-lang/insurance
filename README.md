@@ -20,7 +20,7 @@ Portable `.cljc` across JVM / ClojureScript / SCI / GraalVM.
 | | |
 |---|---|
 | Role | capability |
-| Tests | 131 assertions, all green |
+| Tests | 165 assertions, all green |
 | Operator console (UI/UX) | yes |
 | Export (CSV/JSON) | yes |
 | Shared CSS design system | yes (css.core/operator-theme) |
@@ -149,6 +149,69 @@ exception, so it is **not implemented** here — `iryokikan-bangou-check-digit`
 and `valid-iryokikan-bangou?` always use the full 9-digit body. A caller
 working with pre-1976 legacy codes from those four prefectures should not
 trust this library's check-digit result.
+
+## US insurance/claims identifiers
+
+Structural validation for two identifiers used in US health-insurance claims
+practice, researched from primary sources 2026-07-08 (archived at
+[`kotoba-lang/emr-claims-primary-sources`](https://github.com/kotoba-lang/emr-claims-primary-sources)
+where a primary source exists). Unlike `kotoba.insurance.jp`, **neither
+identifier here gets a check-digit function** — for both, the research
+itself determined there is nothing to implement beyond shape, for two very
+different reasons documented in full in `kotoba.insurance.us`'s namespace
+docstring:
+
+```clojure
+(require '[kotoba.insurance.us :as us])
+
+(us/valid-naic-company-code? "19232")         ; => true  (Allstate's real NAIC company code)
+(us/validate-naic-company-code "1923")        ; => {:insurance/valid? false :insurance/error :not-5-digits}
+
+(us/valid-payer-id-shape? "WX867")            ; => true  (real-world clearinghouse example)
+(us/validate-payer-id-shape "WX-867")         ; => {:insurance/valid? false :insurance/error :non-alphanumeric}
+```
+
+### NAIC company code — 5-digit numeric, confirmed no check digit
+
+Per NAIC's own official Glossary of Insurance Terms
+(https://content.naic.org/glossary-insurance-terms, retrieved 2026-07-08):
+"Company Code - a five-digit identifying number assigned by NAIC, assigned
+to all insurance companies filing financial data with NAIC." Independently
+corroborated by HL7 Terminology's registered `NAICCompanyCodes` NamingSystem
+(OID `2.16.840.1.113883.6.300`), which cites the same source. **No
+check-digit algorithm is documented anywhere in either source** — a
+full-text search of the glossary page's raw HTML for "check digit" returns
+zero hits — so `valid-naic-company-code?` / `validate-naic-company-code`
+check only the 5-decimal-digit shape (leading zeros significant). A
+secondary-source claim (found only as search-result summaries, never
+confirmed against a fully-readable primary document) that codes below
+10000 map to a legacy combined property/casualty-statement category is
+**not implemented** — the one candidate NAIC PDF fetched to check this
+came back as an undecodable compressed/font-subset stream, not readable
+text.
+
+### Payer ID — no universal registry; X12 structural envelope only
+
+A Payer ID routes an electronic claim (ASC X12 837, loop 2010BB, `NM108`
+"PI" / `NM109`) to the correct payer via a clearinghouse. **There is no
+single official registry or issuing authority** — every clearinghouse
+(Availity, Change Healthcare, Stedi, Jopari, Data Dimensions, Carisk, etc.)
+assigns Payer IDs independently, the same payer often has different IDs at
+different clearinghouses, and real-world values vary in both length and
+alphanumeric shape (5-character codes like `WX867`/`35076` alongside
+9-digit TIN-like values such as AHCCCS's `866004791`) — see
+https://blog.daisybill.com/how-to-e-bill-clearinghouse-payer-ids (retrieved
+2026-07-08). The one structural constraint traceable to an accredited
+standards body is ASC X12 data element 67 ("Identification Code"), which
+`NM109` uses: type `AN`, length 2-80 ("AN 2/80") — corroborated here via
+three independent third-party EDI-standard reference mirrors of the X12
+element dictionary (x12.org's own TR3 implementation guides are a paid
+subscription product and did not serve this detail on direct fetch).
+`valid-payer-id-shape?` / `validate-payer-id-shape` therefore check only
+that 2-80 character, alphanumeric-only envelope (the alphanumeric-only
+restriction matches every real-world example found but is not itself a
+documented X12 rule) — **a true result is not a claim that the value is a
+real, currently-issued Payer ID for any specific clearinghouse.**
 
 ## Export (CSV / JSON)
 
