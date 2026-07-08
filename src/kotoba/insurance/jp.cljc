@@ -139,11 +139,12 @@
   s is not exactly 8 decimal digits. Does not check the check digit -- see
   valid-hokensha-bangou?."
   [s]
-  (when (re-matches #"\d{8}" (str s))
-    {:hokensha/houbetsu-bangou       (subs s 0 2)
-     :hokensha/todoufuken-bangou     (subs s 2 4)
-     :hokensha/hokensha-betsu-bangou (subs s 4 7)
-     :hokensha/kenshou-bangou        (subs s 7 8)}))
+  (let [s (str s)]
+    (when (re-matches #"\d{8}" s)
+      {:hokensha/houbetsu-bangou       (subs s 0 2)
+       :hokensha/todoufuken-bangou     (subs s 2 4)
+       :hokensha/hokensha-betsu-bangou (subs s 4 7)
+       :hokensha/kenshou-bangou        (subs s 7 8)})))
 
 (defn valid-hokensha-bangou?
   "True when s is an 8-digit 保険者番号 whose 8th digit matches the check
@@ -303,12 +304,13 @@
   (2) + 点数表番号 (1) + 郡市区番号 (2) + 医療機関(薬局)番号 (4) + 検証番号
   (1). Returns nil when s is not exactly 10 decimal digits."
   [s]
-  (when (re-matches #"\d{10}" (str s))
-    {:iryokikan/todoufuken-bangou (subs s 0 2)
-     :iryokikan/tensuhyou-bangou  (subs s 2 3)
-     :iryokikan/gunshiku-bangou   (subs s 3 5)
-     :iryokikan/kikan-bangou      (subs s 5 9)
-     :iryokikan/kenshou-bangou    (subs s 9 10)}))
+  (let [s (str s)]
+    (when (re-matches #"\d{10}" s)
+      {:iryokikan/todoufuken-bangou (subs s 0 2)
+       :iryokikan/tensuhyou-bangou  (subs s 2 3)
+       :iryokikan/gunshiku-bangou   (subs s 3 5)
+       :iryokikan/kikan-bangou      (subs s 5 9)
+       :iryokikan/kenshou-bangou    (subs s 9 10)})))
 
 (defn iryokikan-bangou-check-digit
   "Compute the 検証番号 (check digit, an int 0-9) for a 9-digit body

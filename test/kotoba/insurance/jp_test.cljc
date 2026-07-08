@@ -28,6 +28,23 @@
   (is (nil? (jp/parse-hokensha-bangou "06130488X"))) ; non-numeric
   (is (nil? (jp/parse-hokensha-bangou nil))))
 
+;; Regression: parse-hokensha-bangou used to validate (str s) against the
+;; #"\d{8}" regex but then call `subs` on the *original*, un-stringified s
+;; -- fine when s was already a string, but a ClassCastException
+;; ("Long cannot be cast to String") for any non-string s (e.g. a plain
+;; Long) whose (str s) happens to be 8 decimal digits. Verified via REPL
+;; 2026-07-08 (`(jp/parse-hokensha-bangou 12345678)` threw before the fix).
+;; Fixed by rebinding s to (str s) before the first subs call, matching the
+;; pattern iryokikan-kikan-bangou-ketsuban? already used correctly.
+(deftest parse-hokensha-bangou-numeric-input-regression
+  (is (= {:hokensha/houbetsu-bangou       "12"
+          :hokensha/todoufuken-bangou     "34"
+          :hokensha/hokensha-betsu-bangou "567"
+          :hokensha/kenshou-bangou        "8"}
+         (jp/parse-hokensha-bangou 12345678)))
+  (is (false? (jp/valid-hokensha-bangou? 12345678)))
+  (is (= :bad-check-digit (:insurance/error (jp/validate-hokensha-bangou 12345678)))))
+
 (deftest valid-test
   (is (true? (jp/valid-hokensha-bangou? "06130488")))
   (is (false? (jp/valid-hokensha-bangou? "06130480"))) ; wrong check digit
@@ -151,6 +168,17 @@
   (is (nil? (jp/parse-iryokikan-bangou "341071236")))   ; 9 digits, not 10
   (is (nil? (jp/parse-iryokikan-bangou "3410712362X"))) ; non-numeric
   (is (nil? (jp/parse-iryokikan-bangou nil))))
+
+;; Regression: same bug class as parse-hokensha-bangou-numeric-input-regression
+;; above -- parse-iryokikan-bangou validated (str s) but ran `subs` on the
+;; original s, throwing ClassCastException for non-string input (e.g. a
+;; Long). Verified via REPL 2026-07-08
+;; (`(jp/parse-iryokikan-bangou 3410712362)` threw before the fix).
+(deftest parse-iryokikan-bangou-numeric-input-regression
+  (is (= (jp/parse-iryokikan-bangou worked-example-code)
+         (jp/parse-iryokikan-bangou 3410712362)))
+  (is (true? (jp/valid-iryokikan-bangou? 3410712362)))
+  (is (true? (:insurance/valid? (jp/validate-iryokikan-bangou 3410712362)))))
 
 (deftest valid-iryokikan-todoufuken-bangou-test
   (is (true? (jp/valid-iryokikan-todoufuken-bangou? worked-example-code))) ; 34 = 広島県
