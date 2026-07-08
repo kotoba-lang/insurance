@@ -20,7 +20,7 @@ Portable `.cljc` across JVM / ClojureScript / SCI / GraalVM.
 | | |
 |---|---|
 | Role | capability |
-| Tests | 165 assertions, all green |
+| Tests | 216 assertions, all green |
 | Operator console (UI/UX) | yes |
 | Export (CSV/JSON) | yes |
 | Shared CSS design system | yes (css.core/operator-theme) |
@@ -212,6 +212,66 @@ that 2-80 character, alphanumeric-only envelope (the alphanumeric-only
 restriction matches every real-world example found but is not itself a
 documented X12 rule) — **a true result is not a claim that the value is a
 real, currently-issued Payer ID for any specific clearinghouse.**
+
+## EU/EEA European Health Insurance Card (EHIC) identifiers
+
+Structural validation only, researched from primary sources 2026-07-08
+(archived at
+[`kotoba-lang/emr-claims-primary-sources`](https://github.com/kotoba-lang/emr-claims-primary-sources)'s
+`eu-ehic/` directory). **Headline finding: there is no single EU-wide
+standardized "EHIC number."** Per Decision No S2 of 12 June 2009 concerning
+the technical specifications of the European Health Insurance Card
+(Administrative Commission for the Coordination of Social Security
+Systems; CELEX 32010D0424(09), OJ C 106, 24.4.2010, p.26-39 — retrieved via
+a real Chrome browser session, since EUR-Lex WAF-blocks automated
+`curl`/`WebFetch` on both its modern and legacy endpoints), the card's
+personal identification number field is explicitly defined as "the
+personal identification number detail used by the issuing Member State" —
+a nation-specific value with no documented cross-Member-State digit count
+or check digit. This is corroborated operationally by a separate European
+Commission report (Pacolet & De Wispelaere 2016) whose footnote records
+Luxembourg reissuing every EHIC in 2014 due to "a change of the composition
+of the national personal identification number."
+
+```clojure
+(require '[kotoba.insurance.eu :as eu])
+
+(eu/valid-issuing-state-code? "UK")                       ; => true (documented GB exception)
+(eu/valid-personal-identification-number-shape? "90010112345") ; => true (≤ 20 chars, no algorithm)
+(eu/valid-institution-identification-number-shape? "1234567")  ; => true (4-10 chars)
+(eu/parse-card-identification-number "AB1867XXXX0000001234")
+;; => {:eu/issuer-identifier "AB1867XXXX" :eu/serial-number "0000001234"}
+```
+
+What *is* EU-standardized, and implemented here as structural-only checks
+(no registry lookups, no check digits — none are documented):
+
+- **Issuing state ID number** (Field 2) — 2 characters, nominally ISO
+  3166-1 alpha-2 with the Decision's own documented "UK instead of GB"
+  exception. Only the 2-uppercase-letter shape is validated; full ISO
+  3166-1 membership is not (scope decision, see `kotoba.insurance.eu`
+  docstring).
+- **Personal identification number** (Field 6) — up to 20 characters, the
+  only EU-standardized fact about this otherwise nation-specific value.
+- **Identification number of the institution** (Field 7, part 2) — 4 to 10
+  characters, nationally assigned ("see national code list of competent
+  institutions"), no documented algorithm.
+- **Logical identification number of the card** (Field 8) — the one
+  precisely specified identifier: exactly 20 characters, a 10-character
+  EN-1867-registered issuer identifier (treated as opaque — EN 1867 itself
+  is a non-free standard, not fetched) plus a 10-digit numeric serial
+  number.
+
+**Known gap, not implemented.** Section 3.5's printing-character-set clause
+("Compliance with EN 1387 ... Latin alphabet Nos 1-4 (ISO 8859-1 to 4)")
+applies to every field above, but is not enforced — EN 1387 is itself a
+non-free standard, and approximating it as a portable regex across
+JVM/ClojureScript/SCI/GraalVM would trade a sourced length check for an
+invented charset check. Decision No S1 of 12 June 2009 (issuance-procedure
+rules, not the data model) and the date-of-birth/expiry-date fields
+(`DD/MM/YYYY`, general dates rather than insurance identifiers) are also
+out of scope for this namespace — see `kotoba.insurance.eu`'s namespace
+docstring for the full field-by-field sourcing.
 
 ## Export (CSV / JSON)
 
