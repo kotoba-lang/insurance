@@ -40,3 +40,53 @@
   (is (= "06" (:hokensha/houbetsu-bangou (jp/validate-hokensha-bangou "06130488"))))
   (is (= :not-8-digits (:insurance/error (jp/validate-hokensha-bangou "0613048"))))
   (is (= :bad-check-digit (:insurance/error (jp/validate-hokensha-bangou "06130480")))))
+
+;; ---------------------------------------------------------------------
+;; 都道府県番号 (prefecture code, 01-47)
+;; ---------------------------------------------------------------------
+
+(deftest todoufuken-names-test
+  (is (= 47 (count jp/todoufuken-names))) ; exactly 47 prefectures, no more/less
+  (is (= "北海道" (jp/todoufuken-name "01")))
+  (is (= "東京都" (jp/todoufuken-name "13")))
+  (is (= "沖縄県" (jp/todoufuken-name "47")))
+  (is (nil? (jp/todoufuken-name "00")))
+  (is (nil? (jp/todoufuken-name "48")))
+  (is (nil? (jp/todoufuken-name nil))))
+
+(deftest valid-todoufuken-bangou-test
+  (is (true? (jp/valid-todoufuken-bangou? "01")))
+  (is (true? (jp/valid-todoufuken-bangou? "47")))
+  (is (false? (jp/valid-todoufuken-bangou? "00")))
+  (is (false? (jp/valid-todoufuken-bangou? "48")))
+  (is (false? (jp/valid-todoufuken-bangou? "1"))) ; not zero-padded to 2 digits
+  (is (false? (jp/valid-todoufuken-bangou? nil))))
+
+;; ---------------------------------------------------------------------
+;; 医療機関コード (medical-institution code, 9 digits) -- shape + 都道府県
+;; only; no check-digit oracle is available, see jp.cljc NOTE.
+;; ---------------------------------------------------------------------
+
+(deftest parse-iryokikan-bangou-test
+  (is (= {:iryokikan/todoufuken-bangou "13"
+          :iryokikan/tensuhyou-bangou  "1"
+          :iryokikan/gunshiku-bangou   "23"
+          :iryokikan/kikan-bangou      "456"
+          :iryokikan/kenshou-bangou    "7"}
+         (jp/parse-iryokikan-bangou "131234567")))
+  (is (nil? (jp/parse-iryokikan-bangou "13123456")))   ; 8 digits, not 9
+  (is (nil? (jp/parse-iryokikan-bangou "131234567X"))) ; non-numeric
+  (is (nil? (jp/parse-iryokikan-bangou nil))))
+
+(deftest valid-iryokikan-todoufuken-bangou-test
+  (is (true? (jp/valid-iryokikan-todoufuken-bangou? "131234567")))  ; 13 = 東京都
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "001234567"))) ; 00 out of range
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "481234567"))) ; 48 out of range
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "13123456")))  ; too short
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? nil))))
+
+(deftest validate-iryokikan-bangou-shape-test
+  (is (true? (:insurance/valid? (jp/validate-iryokikan-bangou-shape "131234567"))))
+  (is (= "13" (:iryokikan/todoufuken-bangou (jp/validate-iryokikan-bangou-shape "131234567"))))
+  (is (= :not-9-digits (:insurance/error (jp/validate-iryokikan-bangou-shape "13123456"))))
+  (is (= :bad-todoufuken-bangou (:insurance/error (jp/validate-iryokikan-bangou-shape "001234567")))))
