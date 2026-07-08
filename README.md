@@ -20,7 +20,7 @@ Portable `.cljc` across JVM / ClojureScript / SCI / GraalVM.
 | | |
 |---|---|
 | Role | capability |
-| Tests | 74 assertions, all green |
+| Tests | 131 assertions, all green |
 | Operator console (UI/UX) | yes |
 | Export (CSV/JSON) | yes |
 | Shared CSS design system | yes (css.core/operator-theme) |
@@ -59,11 +59,19 @@ governor.
 ## Japan health-insurance identifiers
 
 Format and check-digit validation for the 保険者番号 (health-insurer
-number) printed on a Japanese health-insurance card — an 8-digit
-法別番号(2) + 都道府県番号(2) + 保険者別番号(3) + 検証番号(1) structure,
-per MHLW notification 別添２. No real 法別番号 registry, no diagnosis
-codes, no claims-adjustment logic — pure shape/check-digit recomputation
-only.
+number, an 8-digit 法別番号(2) + 都道府県番号(2) + 保険者別番号(3) +
+検証番号(1)) and the 医療機関コード (medical-institution code, a 10-digit
+都道府県番号(2) + 点数表番号(1) + 郡市区番号(2) + 医療機関(薬局)番号(4) +
+検証番号(1)) printed on Japanese health-insurance cards / claims forms, per
+MHLW notification 別添２『保険者番号、公費負担者番号、公費負担医療の受給者
+番号並びに医療機関コード及び薬局コード設定要領』(primary source verified
+2026-07-08: https://www.mhlw.go.jp/content/12400000/001275316.pdf, dated
+2024-07-12; archived at
+[`kotoba-lang/emr-claims-primary-sources`](https://github.com/kotoba-lang/emr-claims-primary-sources)
+alongside a 2008 predecessor notification independently confirming the
+same 保険者番号 worked example — see ADR-2607084100). No real 法別番号 or
+医療機関 registry, no diagnosis codes, no claims-adjustment logic — pure
+shape/check-digit recomputation only.
 
 ```clojure
 (require '[kotoba.insurance.jp :as jp])
@@ -75,41 +83,72 @@ only.
 
 ### 都道府県番号 (prefecture code)
 
-The 2-digit 都道府県番号 (JIS X 0401, "01"-"47") shared by both
-保険者番号 and 医療機関コード is embedded as a 47-entry constant table —
-stable, public, decades-old data, unlike the tens-of-thousands-of-rows
-診療行為/薬剤/傷病名 masters that this codebase deliberately does not
-embed elsewhere (see the iryo actor's master-honesty ADR-2606074000).
+The 2-digit 都道府県番号 shared by both 保険者番号 and 医療機関コード is
+embedded as a 94-entry constant table: the 47 primary codes ("01"-"47",
+JIS X 0401) plus the 47 alternate codes ("51"-"97", each primary code +
+50) that 別添２ documents for use once a prefecture's primary-code range of
+保険者別番号/医療機関(薬局)番号 numbers is exhausted. Both ranges are
+equally valid, currently-issuable codes. Stable, public, decades-old data,
+unlike the tens-of-thousands-of-rows 診療行為/薬剤/傷病名 masters that this
+codebase deliberately does not embed elsewhere (see the iryo actor's
+master-honesty ADR-2606074000).
 
 ```clojure
 (jp/valid-todoufuken-bangou? "13") ; => true
 (jp/todoufuken-name "13")          ; => "東京都"
+(jp/todoufuken-name "63")          ; => "東京都" (alternate code, 13 + 50)
 ```
 
-### 医療機関コード (medical-institution code) — shape + 都道府県 only
+### 医療機関コード (medical-institution code) — full check-digit validation
 
-**Partial support only, by design.** A 医療機関コード is 9 digits:
-都道府県番号(2) + 点数表番号(1) + 郡市区番号(2) + 医療機関番号(3) +
-検証番号(1), per the same 別添２ notification. This library parses that
-shape and validates the 都道府県番号 sub-field, but does **not** compute
-or verify the trailing 検証番号 (check digit), and does **not** decode
-点数表番号 into a 医科/歯科/薬局 category — both are 要検証: there is no
-worked example available in this codebase to test a check-digit
-implementation against (unlike 保険者番号's, verified against 別添２
-第1-5's own example), and the digit↔category mapping handed down between
-sessions has been self-inconsistent (医科=1/歯科=2/薬局=3 vs. 医科=1/
-歯科=3/薬局=4). Rather than guess at either, this library only exposes
-what it can verify: shape and 都道府県番号 range.
+A 医療機関コード is 10 digits: 都道府県番号(2) + 点数表番号(1) +
+郡市区番号(2) + 医療機関(薬局)番号(4) + 検証番号(1), per 別添２ 第４. The
+検証番号 algorithm is the *same* alternating-2/1 fold-mod10 formula as
+保険者番号's, applied to the 9-digit body — verified against 別添２ 第４-５'s
+own worked example (都道府県番号=34, 点数表番号=1, 郡市区番号=07,
+医療機関番号=1236 → 検証番号=2, full code `3410712362`).
+
+点数表番号 decodes to a category per 第４-５(１)「点数表番号は医科１、
+歯科３、薬局４とするものとする」— only these three digits are implemented;
+secondary sources additionally describe "2" (健診等機関) and "6" (訪問看護)
+but the primary source consulted does not document either, so they are
+deliberately left unmapped (`tensuhyou-bangou-category` returns `nil`)
+rather than guessed at.
+
+医療機関(薬局)番号 numeric ranges are validated per 第４-３: 医科
+1,000-2,999 / 歯科 3,000-3,999 / 薬局 4,000-4,999. The ただし書き exclusion
+(a 4-digit number whose middle two or last two digits read "90" is a
+permanent 欠番/unassigned number) is exposed as a separate predicate,
+`iryokikan-kikan-bangou-ketsuban?`, rather than folded into the main
+validator.
 
 ```clojure
-(jp/parse-iryokikan-bangou "131234567")
-;; => {:iryokikan/todoufuken-bangou "13" :iryokikan/tensuhyou-bangou "1"
-;;     :iryokikan/gunshiku-bangou "23" :iryokikan/kikan-bangou "456"
-;;     :iryokikan/kenshou-bangou "7"}
-(jp/valid-iryokikan-todoufuken-bangou? "131234567")   ; => true (13 = 東京都)
-(jp/validate-iryokikan-bangou-shape "13123456")
-;; => {:insurance/valid? false :insurance/error :not-9-digits}
+(jp/parse-iryokikan-bangou "3410712362")
+;; => {:iryokikan/todoufuken-bangou "34" :iryokikan/tensuhyou-bangou "1"
+;;     :iryokikan/gunshiku-bangou "07" :iryokikan/kikan-bangou "1236"
+;;     :iryokikan/kenshou-bangou "2"}
+(jp/iryokikan-bangou-check-digit "341071236")         ; => 2  (MHLW worked example)
+(jp/valid-iryokikan-bangou? "3410712362")             ; => true
+(jp/tensuhyou-bangou-category "1")                    ; => :medical
+(jp/valid-iryokikan-kikan-bangou-range? "1" "1236")   ; => true (医科 1000-2999)
+(jp/validate-iryokikan-bangou "3410712362")
+;; => {:insurance/valid? true :iryokikan/category :medical ...}
+(jp/validate-iryokikan-bangou "341071236X")
+;; => {:insurance/valid? false :insurance/error :not-10-digits}
 ```
+
+**Known gap, not implemented.** A secondary source (Wikipedia,
+「処方箋発行医療機関コード」) describes a legacy exception for some
+医療機関コード issued in 埼玉県・千葉県・東京都・神奈川県 before Japan's
+1976 unification onto the current 10-digit scheme (descending from a 1967
+7-digit scheme), whose 検証番号 is said to be computed over the bare
+7-digit 医療機関コード body alone (郡市区番号+医療機関番号+検証番号),
+omitting 都道府県番号 and 点数表番号 from the check-digit input entirely.
+Neither primary source consulted for this library documents that
+exception, so it is **not implemented** here — `iryokikan-bangou-check-digit`
+and `valid-iryokikan-bangou?` always use the full 9-digit body. A caller
+working with pre-1976 legacy codes from those four prefectures should not
+trust this library's check-digit result.
 
 ## Export (CSV / JSON)
 

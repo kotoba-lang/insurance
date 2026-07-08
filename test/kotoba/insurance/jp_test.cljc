@@ -42,51 +42,143 @@
   (is (= :bad-check-digit (:insurance/error (jp/validate-hokensha-bangou "06130480")))))
 
 ;; ---------------------------------------------------------------------
-;; 都道府県番号 (prefecture code, 01-47)
+;; 都道府県番号 (prefecture code, "01"-"47" primary + "51"-"97" alternate)
 ;; ---------------------------------------------------------------------
 
 (deftest todoufuken-names-test
-  (is (= 47 (count jp/todoufuken-names))) ; exactly 47 prefectures, no more/less
+  (is (= 94 (count jp/todoufuken-names))) ; 47 primary + 47 alternate, no more/less
   (is (= "北海道" (jp/todoufuken-name "01")))
   (is (= "東京都" (jp/todoufuken-name "13")))
   (is (= "沖縄県" (jp/todoufuken-name "47")))
+  ;; alternate ("51"-"97") codes name the same prefecture as their primary
+  ;; ("01"-"47") counterpart -- e.g. 51 = 01 + 50 = 北海道.
+  (is (= "北海道" (jp/todoufuken-name "51")))
+  (is (= "東京都" (jp/todoufuken-name "63")))
+  (is (= "沖縄県" (jp/todoufuken-name "97")))
   (is (nil? (jp/todoufuken-name "00")))
   (is (nil? (jp/todoufuken-name "48")))
+  (is (nil? (jp/todoufuken-name "50"))) ; gap between primary and alternate ranges
+  (is (nil? (jp/todoufuken-name "98")))
   (is (nil? (jp/todoufuken-name nil))))
 
 (deftest valid-todoufuken-bangou-test
   (is (true? (jp/valid-todoufuken-bangou? "01")))
   (is (true? (jp/valid-todoufuken-bangou? "47")))
+  (is (true? (jp/valid-todoufuken-bangou? "51")))
+  (is (true? (jp/valid-todoufuken-bangou? "97")))
   (is (false? (jp/valid-todoufuken-bangou? "00")))
   (is (false? (jp/valid-todoufuken-bangou? "48")))
+  (is (false? (jp/valid-todoufuken-bangou? "50")))
+  (is (false? (jp/valid-todoufuken-bangou? "98")))
   (is (false? (jp/valid-todoufuken-bangou? "1"))) ; not zero-padded to 2 digits
   (is (false? (jp/valid-todoufuken-bangou? nil))))
 
 ;; ---------------------------------------------------------------------
-;; 医療機関コード (medical-institution code, 9 digits) -- shape + 都道府県
-;; only; no check-digit oracle is available, see jp.cljc NOTE.
+;; 点数表番号 (fee-schedule number -> 医科/歯科/薬局 category)
 ;; ---------------------------------------------------------------------
 
+(deftest tensuhyou-bangou-category-test
+  (is (= :medical  (jp/tensuhyou-bangou-category "1")))
+  (is (= :dental   (jp/tensuhyou-bangou-category "3")))
+  (is (= :pharmacy (jp/tensuhyou-bangou-category "4")))
+  ;; "2" (健診等機関) and "6" (訪問看護) are described only by secondary
+  ;; sources, not the primary source this namespace was verified against --
+  ;; deliberately left unmapped rather than guessed at.
+  (is (nil? (jp/tensuhyou-bangou-category "2")))
+  (is (nil? (jp/tensuhyou-bangou-category "6")))
+  (is (nil? (jp/tensuhyou-bangou-category "0")))
+  (is (nil? (jp/tensuhyou-bangou-category nil))))
+
+(deftest valid-tensuhyou-bangou-test
+  (is (true? (jp/valid-tensuhyou-bangou? "1")))
+  (is (true? (jp/valid-tensuhyou-bangou? "3")))
+  (is (true? (jp/valid-tensuhyou-bangou? "4")))
+  (is (false? (jp/valid-tensuhyou-bangou? "2")))
+  (is (false? (jp/valid-tensuhyou-bangou? "6")))
+  (is (false? (jp/valid-tensuhyou-bangou? nil))))
+
+;; ---------------------------------------------------------------------
+;; 医療機関(薬局)番号 (4-digit institution/pharmacy serial) -- numeric range
+;; ---------------------------------------------------------------------
+
+(deftest valid-iryokikan-kikan-bangou-range-test
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "1" "1000"))) ; 医科 lower bound
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "1" "2999"))) ; 医科 upper bound
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "1" "1236"))) ; worked example
+  (is (false? (jp/valid-iryokikan-kikan-bangou-range? "1" "999")))  ; below 医科 range (also not 4 digits)
+  (is (false? (jp/valid-iryokikan-kikan-bangou-range? "1" "3000"))) ; belongs to 歯科, not 医科
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "3" "3000"))) ; 歯科 lower bound
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "3" "3999"))) ; 歯科 upper bound
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "4" "4000"))) ; 薬局 lower bound
+  (is (true?  (jp/valid-iryokikan-kikan-bangou-range? "4" "4999"))) ; 薬局 upper bound
+  (is (false? (jp/valid-iryokikan-kikan-bangou-range? "4" "5000"))) ; above 薬局 range
+  (is (false? (jp/valid-iryokikan-kikan-bangou-range? "2" "1500"))) ; undefined category -> no range
+  (is (false? (jp/valid-iryokikan-kikan-bangou-range? "1" "12345"))) ; not 4 digits
+  (is (false? (jp/valid-iryokikan-kikan-bangou-range? "1" nil))))
+
+(deftest iryokikan-kikan-bangou-ketsuban-test
+  (is (false? (jp/iryokikan-kikan-bangou-ketsuban? "1236"))) ; worked example, not 欠番
+  (is (true?  (jp/iryokikan-kikan-bangou-ketsuban? "1902"))) ; middle two digits "90"
+  (is (true?  (jp/iryokikan-kikan-bangou-ketsuban? "1290"))) ; last two digits "90"
+  (is (false? (jp/iryokikan-kikan-bangou-ketsuban? "1000")))
+  (is (false? (jp/iryokikan-kikan-bangou-ketsuban? "123"))) ; not 4 digits
+  (is (false? (jp/iryokikan-kikan-bangou-ketsuban? nil))))
+
+;; ---------------------------------------------------------------------
+;; 医療機関コード (medical-institution code, 10 digits)
+;; ---------------------------------------------------------------------
+
+;; Worked example from MHLW 別添２ 第４-５: 都道府県番号=34, 点数表番号=1,
+;; 郡市区番号=07, 医療機関番号=1236 -> weighted sum 28 -> 検証番号=2 ->
+;; full 10-digit 医療機関コード 3410712362.
+(def worked-example-code "3410712362")
+
+(deftest iryokikan-bangou-check-digit-worked-example
+  (is (= 2 (jp/iryokikan-bangou-check-digit "341071236"))))
+
+(deftest iryokikan-bangou-check-digit-bad-input
+  (is (nil? (jp/iryokikan-bangou-check-digit "34107123")))   ; 8 digits
+  (is (nil? (jp/iryokikan-bangou-check-digit "341071236X"))) ; non-numeric
+  (is (nil? (jp/iryokikan-bangou-check-digit nil))))
+
 (deftest parse-iryokikan-bangou-test
-  (is (= {:iryokikan/todoufuken-bangou "13"
+  (is (= {:iryokikan/todoufuken-bangou "34"
           :iryokikan/tensuhyou-bangou  "1"
-          :iryokikan/gunshiku-bangou   "23"
-          :iryokikan/kikan-bangou      "456"
-          :iryokikan/kenshou-bangou    "7"}
-         (jp/parse-iryokikan-bangou "131234567")))
-  (is (nil? (jp/parse-iryokikan-bangou "13123456")))   ; 8 digits, not 9
-  (is (nil? (jp/parse-iryokikan-bangou "131234567X"))) ; non-numeric
+          :iryokikan/gunshiku-bangou   "07"
+          :iryokikan/kikan-bangou      "1236"
+          :iryokikan/kenshou-bangou    "2"}
+         (jp/parse-iryokikan-bangou worked-example-code)))
+  (is (nil? (jp/parse-iryokikan-bangou "341071236")))   ; 9 digits, not 10
+  (is (nil? (jp/parse-iryokikan-bangou "3410712362X"))) ; non-numeric
   (is (nil? (jp/parse-iryokikan-bangou nil))))
 
 (deftest valid-iryokikan-todoufuken-bangou-test
-  (is (true? (jp/valid-iryokikan-todoufuken-bangou? "131234567")))  ; 13 = 東京都
-  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "001234567"))) ; 00 out of range
-  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "481234567"))) ; 48 out of range
-  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "13123456")))  ; too short
+  (is (true? (jp/valid-iryokikan-todoufuken-bangou? worked-example-code))) ; 34 = 広島県
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "0010712362"))) ; 00 out of range
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "4810712362"))) ; 48 out of range
+  (is (false? (jp/valid-iryokikan-todoufuken-bangou? "341071236"))) ; too short
   (is (false? (jp/valid-iryokikan-todoufuken-bangou? nil))))
 
+(deftest valid-iryokikan-bangou-test
+  (is (true?  (jp/valid-iryokikan-bangou? worked-example-code)))
+  (is (false? (jp/valid-iryokikan-bangou? "3410712360"))) ; wrong check digit
+  (is (false? (jp/valid-iryokikan-bangou? "341071236")))  ; too short
+  (is (false? (jp/valid-iryokikan-bangou? nil))))
+
 (deftest validate-iryokikan-bangou-shape-test
-  (is (true? (:insurance/valid? (jp/validate-iryokikan-bangou-shape "131234567"))))
-  (is (= "13" (:iryokikan/todoufuken-bangou (jp/validate-iryokikan-bangou-shape "131234567"))))
-  (is (= :not-9-digits (:insurance/error (jp/validate-iryokikan-bangou-shape "13123456"))))
-  (is (= :bad-todoufuken-bangou (:insurance/error (jp/validate-iryokikan-bangou-shape "001234567")))))
+  (is (true? (:insurance/valid? (jp/validate-iryokikan-bangou-shape worked-example-code))))
+  (is (= "34" (:iryokikan/todoufuken-bangou (jp/validate-iryokikan-bangou-shape worked-example-code))))
+  (is (= :not-10-digits (:insurance/error (jp/validate-iryokikan-bangou-shape "341071236"))))
+  (is (= :bad-todoufuken-bangou (:insurance/error (jp/validate-iryokikan-bangou-shape "0010712362")))))
+
+(deftest validate-iryokikan-bangou-test
+  (is (true? (:insurance/valid? (jp/validate-iryokikan-bangou worked-example-code))))
+  (is (= :medical (:iryokikan/category (jp/validate-iryokikan-bangou worked-example-code))))
+  (is (= "1236" (:iryokikan/kikan-bangou (jp/validate-iryokikan-bangou worked-example-code))))
+  (is (= :not-10-digits (:insurance/error (jp/validate-iryokikan-bangou "341071236"))))
+  (is (= :bad-todoufuken-bangou (:insurance/error (jp/validate-iryokikan-bangou "0010712362"))))
+  ;; 点数表番号 "2" is not one of the 3 documented categories
+  (is (= :bad-tensuhyou-bangou (:insurance/error (jp/validate-iryokikan-bangou "3420712362"))))
+  ;; 点数表番号 "1" (医科) but 医療機関番号 3999 is outside the 医科 1000-2999 range
+  (is (= :bad-kikan-bangou-range (:insurance/error (jp/validate-iryokikan-bangou "3410739998"))))
+  (is (= :bad-check-digit (:insurance/error (jp/validate-iryokikan-bangou "3410712360")))))
