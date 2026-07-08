@@ -20,7 +20,7 @@ Portable `.cljc` across JVM / ClojureScript / SCI / GraalVM.
 | | |
 |---|---|
 | Role | capability |
-| Tests | 24 assertions, all green |
+| Tests | 48 assertions, all green |
 | Operator console (UI/UX) | yes |
 | Export (CSV/JSON) | yes |
 | Shared CSS design system | yes (css.core/operator-theme) |
@@ -54,6 +54,23 @@ governor.
   {:policies [(ins/policy "P1" "Alice" :life 100000 "2026-01-01" "2036-01-01")]
    :claims   [(ins/claim "C1" "P1" "Alice" "2026-06-01" 5000 :status :paid)]})
 ;; => "<html>...read-only · governor-gated...</html>"
+```
+
+## Japan health-insurance identifiers
+
+Format and check-digit validation for the 保険者番号 (health-insurer
+number) printed on a Japanese health-insurance card — an 8-digit
+法別番号(2) + 都道府県番号(2) + 保険者別番号(3) + 検証番号(1) structure,
+per MHLW notification 別添２. No real 法別番号/都道府県番号 registry, no
+医療機関コード, no diagnosis codes, no claims-adjustment logic — pure
+shape/check-digit recomputation only.
+
+```clojure
+(require '[kotoba.insurance.jp :as jp])
+
+(jp/valid-hokensha-bangou? "06130488")        ; => true  (MHLW worked example)
+(jp/parse-hokensha-bangou "06130488")         ; => {:hokensha/houbetsu-bangou "06" ...}
+(jp/validate-hokensha-bangou "0613048")       ; => {:insurance/valid? false :insurance/error :not-8-digits}
 ```
 
 ## Export (CSV / JSON)
