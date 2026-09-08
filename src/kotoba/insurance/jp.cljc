@@ -75,7 +75,7 @@
   exception, so it is **not implemented** here rather than guessed at --
   `iryokikan-bangou-check-digit` and `valid-iryokikan-bangou?` always use
   the full 9-digit body."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (defn- digit->int
   "Portable char / 1-char-string -> 0-9 int, or nil if c is not a decimal
