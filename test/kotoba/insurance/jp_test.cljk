@@ -1,5 +1,5 @@
 (ns kotoba.insurance.jp-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.test :refer [deftest is]]
             [kotoba.insurance.jp :as jp]))
 
 ;; Worked example from MHLW 別添２ 第1-5: body 0613048 -> weighted sum 22
