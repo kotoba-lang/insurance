@@ -1,5 +1,5 @@
 (ns kotoba.insurance.ui-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.insurance :as ins]
             [kotoba.insurance.ui :as ui]))
 

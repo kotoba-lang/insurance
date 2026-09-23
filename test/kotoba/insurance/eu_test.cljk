@@ -1,5 +1,5 @@
 (ns kotoba.insurance.eu-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.test :refer [deftest is]]
             [kotoba.insurance.eu :as eu]))
 
 ;; ---------------------------------------------------------------------
